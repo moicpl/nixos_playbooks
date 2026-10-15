@@ -1,0 +1,7 @@
+---
+# Install NixOS machines and keep their base system:
+#   ansible-playbook bootstrap_nix.yml [-e nixos_install_wipe=true]
+# The playbook is moicpl.nixos.bootstrap_nix, in collection-nixos.
+
+- name: Install and configure NixOS machines
+  ansible.builtin.import_playbook: moicpl.nixos.bootstrap_nix

@@ -1,0 +1,7 @@
+---
+# Frigate's state on the [nixos_home] machines:
+#   ansible-playbook config/frigate.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.frigate, in collection-app-config.
+
+- name: Manage Frigate's state
+  ansible.builtin.import_playbook: moicpl.app_config.frigate

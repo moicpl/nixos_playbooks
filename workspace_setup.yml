@@ -1,0 +1,298 @@
+---
+# Bootstrap a dev workspace for nixos_playbooks.
+#
+# - creates nixos_playbooks/.ansible_vault_pswd, prompting for the vault password
+#   when the file is missing (an existing file is never changed)
+# - creates nixos_playbooks/ansible.cfg from ansible_example.cfg when it is missing
+#   (an existing ansible.cfg keeps your local changes)
+# - installs the galaxy collections listed in nixos_playbooks/collections/requirements.yml
+#   (e.g. bitwarden.secrets for the Bitwarden lookup) into ~/.ansible/collections
+# - git clones the git collections listed there (moicpl.nixos, moicpl.app_config)
+#   into the workspace root, the parent of nixos_playbooks/ (real clones, so you
+#   can commit/push from them), and symlinks each one as
+#   collections/ansible_collections/<namespace>/<name>, the first collections
+#   path in ansible.cfg (gitignored)
+# - git clones every git role listed in nixos_playbooks/roles/requirements.yml
+#   (bitwarden) into the workspace root and symlinks it into
+#   nixos_playbooks/roles/<role name> (relative links, e.g. roles/bitwarden ->
+#   ../../bitwarden), and lists those links in nixos_playbooks/.gitignore
+# - git clones the lab1inventory repo into the workspace root and links it as
+#   nixos_playbooks/inventory (-> ../lab1inventory)
+# - git clones the lab1appstate repo (the app state store of the config/*
+#   playbooks) into the workspace root and links it as nixos_playbooks/appstate
+# - installs sops and age (for the app state store) into ~/.local/bin when
+#   they are missing
+#
+# Paths come from the playbook location, so it can run from any directory. Run it
+# in an interactive terminal the first time so the vault password can be entered:
+#   ansible-playbook nixos_playbooks/workspace_setup.yml
+#
+# Existing clones are never updated or reset; use git yourself in each repo.
+
+- name: Clone and link the collection and role repositories into the workspace
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    workspace_dir: "{{ playbook_dir | dirname }}"
+    workspace_roles_dir: "{{ playbook_dir }}/roles"
+    workspace_requirements_file: "{{ workspace_roles_dir }}/requirements.yml"
+    workspace_collections_requirements_file: "{{ playbook_dir }}/collections/requirements.yml"
+    workspace_collections_dir: "{{ playbook_dir }}/collections/ansible_collections"
+    workspace_vault_password_file: "{{ playbook_dir }}/.ansible_vault_pswd"
+    workspace_gitignore_file: "{{ playbook_dir }}/.gitignore"
+    workspace_ansible_cfg_example: "{{ playbook_dir }}/ansible_example.cfg"
+    workspace_ansible_cfg: "{{ playbook_dir }}/ansible.cfg"
+    workspace_inventory_repo: https://github.com/moicpl/lab1inventory.git
+    workspace_inventory_dir: "{{ workspace_dir }}/lab1inventory"
+    workspace_inventory_link: "{{ playbook_dir }}/inventory"
+    workspace_appstate_repo: https://github.com/moicpl/lab1appstate.git
+    workspace_appstate_dir: "{{ workspace_dir }}/lab1appstate"
+    workspace_appstate_link: "{{ playbook_dir }}/appstate"
+    # sops and age from their GitHub releases; an installed one is kept
+    # (delete it to install the version below)
+    workspace_bin_dir: "{{ lookup('ansible.builtin.env', 'HOME') }}/.local/bin"
+    workspace_sops_version: v3.13.3
+    workspace_sops_url: https://github.com/getsops/sops/releases/download/{{ workspace_sops_version }}
+    workspace_age_version: v1.3.2
+    workspace_age_url: https://github.com/FiloSottile/age/releases/download/{{ workspace_age_version }}
+    workspace_arch: "{{ {'x86_64': 'amd64', 'aarch64': 'arm64'}[lookup('ansible.builtin.pipe', 'uname -m')] }}"
+
+  tasks:
+    - name: workspace_setup.yml | Check for the vault password file
+      ansible.builtin.stat:
+        path: "{{ workspace_vault_password_file }}"
+      register: workspace_vault_password_stat
+
+    # To change the password, delete the file and rerun this playbook.
+    - name: workspace_setup.yml | Create the vault password file
+      when: not workspace_vault_password_stat.stat.exists
+      block:
+        - name: workspace_setup.yml | Ask for the vault password
+          ansible.builtin.pause:
+            prompt: "Ansible Vault password that encrypts the Bitwarden token"
+            echo: false
+          register: workspace_vault_password_input
+          no_log: true
+
+        - name: workspace_setup.yml | Check that a vault password was entered
+          ansible.builtin.assert:
+            that:
+              - workspace_vault_password_input.user_input | default('') | length > 0
+            fail_msg: "No vault password entered. Run the playbook from an interactive terminal."
+            quiet: true
+
+        - name: workspace_setup.yml | Write the vault password file
+          ansible.builtin.copy:
+            dest: "{{ workspace_vault_password_file }}"
+            content: "{{ workspace_vault_password_input.user_input }}\n"
+            mode: "0600"
+            force: false
+          no_log: true
+
+    # Copied, not moved: ansible_example.cfg stays committed as the template.
+    - name: workspace_setup.yml | Create ansible.cfg from ansible_example.cfg
+      ansible.builtin.copy:
+        src: "{{ workspace_ansible_cfg_example }}"
+        dest: "{{ workspace_ansible_cfg }}"
+        mode: "0644"
+        force: false
+
+    - name: workspace_setup.yml | Load collection requirements
+      ansible.builtin.set_fact:
+        workspace_collection_requirements: >-
+          {{ (lookup('ansible.builtin.file', workspace_collections_requirements_file) | from_yaml).collections }}
+
+    # Already installed collections are left alone; add --force to reinstall them.
+    - name: workspace_setup.yml | Install the galaxy collections
+      ansible.builtin.command:
+        argv: >-
+          {{ ['ansible-galaxy', 'collection', 'install']
+             + workspace_collection_requirements | rejectattr('type', 'defined') | map(attribute='name') }}
+      register: workspace_collections_install
+      changed_when: "'Nothing to do' not in workspace_collections_install.stdout"
+
+    - name: workspace_setup.yml | Build the list of git collections
+      ansible.builtin.set_fact:
+        workspace_collection_repos: "{{ workspace_collection_repos | default([]) + [workspace_collection_repo] }}"
+      vars:
+        workspace_collection_src: "{{ item.name | regex_replace('^git\\+', '') }}"
+        workspace_collection_repo:
+          src: "{{ workspace_collection_src }}"
+          dir: "{{ workspace_collection_src | basename | regex_replace('\\.git$', '') }}"
+          version: "{{ item.version | default('HEAD') }}"
+      loop: "{{ workspace_collection_requirements | selectattr('type', 'defined') | selectattr('type', 'equalto', 'git') }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: workspace_setup.yml | Clone collection repositories into the workspace
+      ansible.builtin.git:
+        repo: "{{ item.src }}"
+        dest: "{{ workspace_dir }}/{{ item.dir }}"
+        version: "{{ item.version }}"
+        update: false
+      loop: "{{ workspace_collection_repos | default([]) }}"
+      loop_control:
+        label: "{{ item.dir }}"
+
+    # The link's path comes from the clone's galaxy.yml. In check mode a clone
+    # that wasn't really made has none: its link is left for the real run.
+    - name: workspace_setup.yml | Read the collection names from their galaxy.yml
+      ansible.builtin.set_fact:
+        workspace_collection_links: >-
+          {{ workspace_collection_links | default([])
+             + [{'dir': item.dir, 'namespace': workspace_galaxy.namespace, 'name': workspace_galaxy.name}] }}
+      vars:
+        workspace_galaxy: "{{ lookup('ansible.builtin.file', workspace_dir ~ '/' ~ item.dir ~ '/galaxy.yml') | from_yaml }}"
+      loop: "{{ workspace_collection_repos | default([]) }}"
+      loop_control:
+        label: "{{ item.dir }}"
+      when: (workspace_dir ~ '/' ~ item.dir ~ '/galaxy.yml') is file
+
+    - name: workspace_setup.yml | Create the collection namespace directories
+      ansible.builtin.file:
+        path: "{{ workspace_collections_dir }}/{{ item }}"
+        state: directory
+        mode: "0755"
+      loop: "{{ workspace_collection_links | default([]) | map(attribute='namespace') | unique }}"
+
+    # Relative links with the same check-mode force as the role links below
+    - name: workspace_setup.yml | Link collection repositories into the collections path
+      ansible.builtin.file:
+        src: "{{ (workspace_dir ~ '/' ~ item.dir) | ansible.builtin.relpath(workspace_collections_dir ~ '/' ~ item.namespace) }}"
+        dest: "{{ workspace_collections_dir }}/{{ item.namespace }}/{{ item.name }}"
+        state: link
+        force: "{{ ansible_check_mode }}"
+      loop: "{{ workspace_collection_links | default([]) }}"
+      loop_control:
+        label: "{{ item.namespace }}.{{ item.name }} -> {{ item.dir }}"
+
+    - name: workspace_setup.yml | Load role requirements
+      ansible.builtin.set_fact:
+        workspace_requirements: "{{ lookup('ansible.builtin.file', workspace_requirements_file) | from_yaml }}"
+
+    # requirements.yml can be either a list of roles or a mapping with a roles: key
+    - name: workspace_setup.yml | Build the list of git repositories
+      ansible.builtin.set_fact:
+        workspace_repos: "{{ workspace_repos | default([]) + [workspace_repo] }}"
+      vars:
+        workspace_role_list: >-
+          {{ workspace_requirements.roles | default([])
+             if workspace_requirements is mapping else workspace_requirements }}
+        workspace_repo_src: "{{ item.src | regex_replace('^git\\+', '') }}"
+        workspace_repo_dir: "{{ workspace_repo_src | basename | regex_replace('\\.git$', '') }}"
+        workspace_repo:
+          name: "{{ item.name | default(workspace_repo_dir) }}"
+          src: "{{ workspace_repo_src }}"
+          dir: "{{ workspace_repo_dir }}"
+          version: "{{ item.version | default('HEAD') }}"
+      loop: "{{ workspace_role_list }}"
+      loop_control:
+        label: "{{ item.name | default(item.src) }}"
+      when: >-
+        item.scm | default('') == 'git'
+        or item.src is ansible.builtin.match('git\+|.*\.git$')
+
+    - name: workspace_setup.yml | Check that role names and clone directories are unique
+      ansible.builtin.assert:
+        that:
+          - workspace_repos | default([]) | length > 0
+          - workspace_repos | map(attribute='name') | unique | length == workspace_repos | length
+          - workspace_repos | map(attribute='dir') | unique | length == workspace_repos | length
+        fail_msg: "No git roles found in {{ workspace_requirements_file }}, or duplicate role names/repositories."
+        quiet: true
+
+    - name: workspace_setup.yml | Clone role repositories into the workspace
+      ansible.builtin.git:
+        repo: "{{ item.src }}"
+        dest: "{{ workspace_dir }}/{{ item.dir }}"
+        version: "{{ item.version }}"
+        update: false
+      loop: "{{ workspace_repos }}"
+      loop_control:
+        label: "{{ item.dir }}"
+
+    - name: workspace_setup.yml | Ensure the roles directory exists
+      ansible.builtin.file:
+        path: "{{ workspace_roles_dir }}"
+        state: directory
+        mode: "0755"
+
+    # Relative links keep working if the workspace is mounted elsewhere (container).
+    # force only in check mode: the clone above was not really made, so the
+    # link target does not exist yet and the file module would refuse.
+    - name: workspace_setup.yml | Link role repositories into the roles directory
+      ansible.builtin.file:
+        src: "{{ (workspace_dir ~ '/' ~ item.dir) | ansible.builtin.relpath(workspace_roles_dir) }}"
+        dest: "{{ workspace_roles_dir }}/{{ item.name }}"
+        state: link
+        force: "{{ ansible_check_mode }}"
+      loop: "{{ workspace_repos }}"
+      loop_control:
+        label: "{{ item.name }} -> {{ item.dir }}"
+
+    - name: workspace_setup.yml | Clone the inventory repository into the workspace
+      ansible.builtin.git:
+        repo: "{{ workspace_inventory_repo }}"
+        dest: "{{ workspace_inventory_dir }}"
+        update: false
+
+    # Same relative link and check-mode force as the role links above.
+    - name: workspace_setup.yml | Link the inventory repository as inventory
+      ansible.builtin.file:
+        src: "{{ workspace_inventory_dir | ansible.builtin.relpath(playbook_dir) }}"
+        dest: "{{ workspace_inventory_link }}"
+        state: link
+        force: "{{ ansible_check_mode }}"
+
+    - name: workspace_setup.yml | Keep role links out of the nixos_playbooks repository
+      ansible.builtin.blockinfile:
+        path: "{{ workspace_gitignore_file }}"
+        create: true
+        mode: "0644"
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - role links from workspace_setup.yml"
+        block: |
+          {% for repo in workspace_repos | sort(attribute='name') %}
+          /{{ workspace_roles_dir | ansible.builtin.relpath(playbook_dir) }}/{{ repo.name }}
+          {% endfor %}
+
+    - name: workspace_setup.yml | Clone the app state store repository into the workspace
+      ansible.builtin.git:
+        repo: "{{ workspace_appstate_repo }}"
+        dest: "{{ workspace_appstate_dir }}"
+        update: false
+
+    # Same relative link and check-mode force as the role links above.
+    - name: workspace_setup.yml | Link the app state store repository as appstate
+      ansible.builtin.file:
+        src: "{{ workspace_appstate_dir | ansible.builtin.relpath(playbook_dir) }}"
+        dest: "{{ workspace_appstate_link }}"
+        state: link
+        force: "{{ ansible_check_mode }}"
+
+    - name: workspace_setup.yml | Create the tools directory
+      ansible.builtin.file:
+        path: "{{ workspace_bin_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: workspace_setup.yml | Install sops
+      ansible.builtin.get_url:
+        url: "{{ workspace_sops_url }}/sops-{{ workspace_sops_version }}.linux.{{ workspace_arch }}"
+        checksum: "sha256:{{ workspace_sops_url }}/sops-{{ workspace_sops_version }}.checksums.txt"
+        dest: "{{ workspace_bin_dir }}/sops"
+        mode: "0755"
+        force: false
+
+    - name: workspace_setup.yml | Install age and age-keygen
+      ansible.builtin.unarchive:
+        src: "{{ workspace_age_url }}/age-{{ workspace_age_version }}-linux-{{ workspace_arch }}.tar.gz"
+        dest: "{{ workspace_bin_dir }}"
+        remote_src: true
+        include:
+          - age/age
+          - age/age-keygen
+        extra_opts:
+          - --strip-components=1
+        creates: "{{ workspace_bin_dir }}/age-keygen"

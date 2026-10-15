@@ -1,0 +1,7 @@
+---
+# Standalone roles the collections' playbooks use from the roles path, cloned
+# and linked by workspace_setup.yml.
+roles:
+  - name: bitwarden
+    src: https://github.com/moicpl/bitwarden.git
+    scm: git

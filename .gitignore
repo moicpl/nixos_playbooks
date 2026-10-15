@@ -1,0 +1,16 @@
+# Local files, never committed
+/ansible.cfg
+/.ansible_vault_pswd
+/.ansible_ssh_key
+
+# Symlinks to ../lab1inventory and ../lab1appstate (their own repos)
+/inventory
+/appstate
+
+# Symlinks to the collection clones (moicpl.nixos, moicpl.app_config)
+/collections/ansible_collections/
+
+# Symlinks to the role clones; this block is rewritten by workspace_setup.yml
+# BEGIN ANSIBLE MANAGED BLOCK - role links from workspace_setup.yml
+/roles/bitwarden
+# END ANSIBLE MANAGED BLOCK - role links from workspace_setup.yml

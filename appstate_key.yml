@@ -1,0 +1,104 @@
+---
+# Create the age key that encrypts the app state store (lab1appstate, linked as
+# nixos_playbooks/appstate) and store it in Bitwarden.
+#
+# The private key is stored in Bitwarden as appstate_age_key; the bitwarden role
+# records its ID, and this playbook the public key (appstate_age_public_key), in
+# inventory/group_vars/all/appstate.yml (commit it in lab1inventory). The
+# store's .sops.yaml gets the public key, so `sops` works there by hand with
+# SOPS_AGE_KEY set to the private key.
+#
+# Run once, before the first config/* run:
+#   ansible-playbook appstate_key.yml
+# A key whose ID is already set is kept: a new key couldn't read the files
+# already stored (rotating means re-encrypting them with `sops updatekeys`).
+
+- name: Create the app state store's age key and publish it to Bitwarden
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    appstate_key_vars_file: "{{ ansible_inventory_sources | first }}/group_vars/all/appstate.yml"
+    # age-keygen writes the public key as a comment: "# public key: age1..."
+    appstate_key_public: >-
+      {{ bitwarden_secrets.appstate_age_key | regex_search('# public key: (age1[0-9a-z]+)', '\1') | first }}
+
+  tasks:
+    - name: appstate_key.yml | Generate and publish the key
+      when: appstate_age_key_bws_id is not defined
+      block:
+        # Generated even in check mode so the rest of the play can run; it is
+        # only a temporary file.
+        - name: appstate_key.yml | Create a temporary directory for the key
+          ansible.builtin.tempfile:
+            state: directory
+            suffix: appstate_key
+          register: appstate_key_tmp
+          check_mode: false
+
+        - name: appstate_key.yml | Generate the key
+          ansible.builtin.command:
+            argv:
+              - age-keygen
+              - --output
+              - "{{ appstate_key_tmp.path }}/key.txt"
+          changed_when: true
+          check_mode: false
+
+        - name: appstate_key.yml | Read the key
+          ansible.builtin.slurp:
+            src: "{{ appstate_key_tmp.path }}/key.txt"
+          register: appstate_key_file
+          no_log: true
+
+        - name: appstate_key.yml | Publish the private key to Bitwarden
+          ansible.builtin.include_role:
+            name: bitwarden
+          vars:
+            bitwarden_action: put
+            bitwarden_secret_name: appstate_age_key
+            bitwarden_secret_content: "{{ appstate_key_file.content | b64decode }}"
+            bitwarden_secret_note: "age key of the app state store (lab1appstate), created by nixos_playbooks/appstate_key.yml"
+            bitwarden_secret_id_file: "{{ appstate_key_vars_file }}"
+
+      always:
+        - name: appstate_key.yml | Remove the temporary key
+          ansible.builtin.file:
+            path: "{{ appstate_key_tmp.path }}"
+            state: absent
+          when: appstate_key_tmp.path is defined
+          check_mode: false
+
+    # Also when a run stopped after storing the key: read back from Bitwarden
+    - name: appstate_key.yml | Record the public key
+      when: appstate_age_public_key is not defined
+      block:
+        - name: appstate_key.yml | Get the key from Bitwarden
+          ansible.builtin.include_role:
+            name: bitwarden
+          vars:
+            bitwarden_action: get
+            bitwarden_secret_name: appstate_age_key
+
+        # Before the set_fact: the block's condition is checked again for each task
+        - name: appstate_key.yml | Record the public key in the inventory
+          ansible.builtin.lineinfile:
+            path: "{{ appstate_key_vars_file }}"
+            insertbefore: '^\.\.\.$'
+            regexp: "^appstate_age_public_key:"
+            line: 'appstate_age_public_key: "{{ appstate_key_public }}"'
+
+        - name: appstate_key.yml | Use the public key for the rest of the play
+          ansible.builtin.set_fact:
+            appstate_age_public_key: "{{ appstate_key_public }}"
+
+    - name: appstate_key.yml | Write the store's sops configuration
+      ansible.builtin.copy:
+        content: |
+          # Files of this store are encrypted to this age key (nixos_playbooks/appstate_key.yml);
+          # its private key is appstate_age_key in Bitwarden.
+          creation_rules:
+            - age: {{ appstate_age_public_key }}
+        dest: "{{ appstate_dir }}/.sops.yaml"
+        mode: "0644"

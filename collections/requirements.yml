@@ -1,0 +1,15 @@
+---
+# Collections nixos_playbooks needs, installed by workspace_setup.yml: the
+# galaxy ones into ~/.ansible/collections; the git ones (type: git) cloned into
+# the workspace root and linked under collections/ansible_collections/.
+collections:
+  - name: https://github.com/moicpl/collection-nixos.git
+    type: git
+    version: main
+  - name: https://github.com/moicpl/collection-app-config.git
+    type: git
+    version: main
+  - name: bitwarden.secrets
+    source: https://galaxy.ansible.com
+  - name: community.sops
+    source: https://galaxy.ansible.com

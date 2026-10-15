@@ -1,0 +1,7 @@
+---
+# Prowlarr's state on the [nixos_arr] machines:
+#   ansible-playbook config/prowlarr.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.prowlarr, in collection-app-config.
+
+- name: Manage Prowlarr's state
+  ansible.builtin.import_playbook: moicpl.app_config.prowlarr

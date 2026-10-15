@@ -1,0 +1,7 @@
+---
+# Sonarr's state on the [nixos_arr] machines:
+#   ansible-playbook config/sonarr.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.sonarr, in collection-app-config.
+
+- name: Manage Sonarr's state
+  ansible.builtin.import_playbook: moicpl.app_config.sonarr

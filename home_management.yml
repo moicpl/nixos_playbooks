@@ -1,0 +1,7 @@
+---
+# Containers of the [nixos_home] machines (UniFi, Home Assistant, Frigate):
+#   ansible-playbook home_management.yml
+# The playbook is moicpl.nixos.home_management, in collection-nixos.
+
+- name: Configure the home management apps
+  ansible.builtin.import_playbook: moicpl.nixos.home_management

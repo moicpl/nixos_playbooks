@@ -1,0 +1,7 @@
+---
+# Containers of the [nixos_arr] machines (*arr apps, Transmission, Jellyfin, Immich):
+#   ansible-playbook arr_nix.yml
+# The playbook is moicpl.nixos.arr_nix, in collection-nixos.
+
+- name: Configure the media apps
+  ansible.builtin.import_playbook: moicpl.nixos.arr_nix
