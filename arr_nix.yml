@@ -1,6 +1,8 @@
 ---
 # Containers of the [nixos_arr] machines (*arr apps, Transmission, Jellyfin, Immich):
 #   ansible-playbook arr_nix.yml
+# Remove the containers (keeps their data in /var/lib/<app> and /data):
+#   ansible-playbook arr_nix.yml -e nixos_apps_remove=true
 # The playbook is moicpl.nixos.arr_nix, in collection-nixos.
 
 - name: Configure the media apps
