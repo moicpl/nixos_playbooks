@@ -28,7 +28,7 @@ state store next to this repo and links them here.
 | --- | --- |
 | `ansible-playbook bootstrap_nix.yml [-e nixos_install_wipe=true]` | Install a machine from the live installer; base system of all `[nixos]` machines |
 | `ansible-playbook home_management.yml` | Containers of `[nixos_home]` (UniFi, Home Assistant, Frigate) |
-| `ansible-playbook arr_nix.yml` | Containers of `[nixos_arr]` (Sonarr, Radarr, Lidarr, Prowlarr, Transmission, Jellyfin, Immich) |
-| `ansible-playbook config/<app>.yml -e app_action=configure\|backup\|default` | State of Frigate, Sonarr or Prowlarr |
+| `ansible-playbook arr_nix.yml` | Containers of `[nixos_arr]` (Sonarr, Radarr, Lidarr, Prowlarr, Transmission, Jellyfin, Immich, Nextcloud), their data on the NAS (NFS) |
+| `ansible-playbook config/<app>.yml -e app_action=configure\|backup\|default` | State of an app: Frigate, Sonarr, Radarr, Lidarr, Prowlarr, Transmission, Jellyfin, Immich or Nextcloud |
 | `ansible-playbook ssh_keypair.yml` | Create the SSH key pair in Bitwarden (once) |
 | `ansible-playbook appstate_key.yml` | Create the app state store's age key (once) |

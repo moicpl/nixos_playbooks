@@ -1,0 +1,7 @@
+---
+# Transmission's state on the [nixos_arr] machines:
+#   ansible-playbook config/transmission.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.transmission, in collection-app-config.
+
+- name: Manage Transmission's state
+  ansible.builtin.import_playbook: moicpl.app_config.transmission

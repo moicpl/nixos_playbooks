@@ -1,0 +1,7 @@
+---
+# Radarr's state on the [nixos_arr] machines:
+#   ansible-playbook config/radarr.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.radarr, in collection-app-config.
+
+- name: Manage Radarr's state
+  ansible.builtin.import_playbook: moicpl.app_config.radarr

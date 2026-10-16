@@ -14,7 +14,7 @@ spans four repos, plus the app state store:
   `ansible.cfg` is picked up. `ansible.cfg` is a local, gitignored copy of
   `ansible_example.cfg`, created by `workspace_setup.yml` when missing.
   - `bootstrap_nix.yml`, `home_management.yml`, `arr_nix.yml` → `moicpl.nixos`
-  - `config/<app>.yml` (`frigate`, `sonarr`, `prowlarr`), run as
+  - `config/<app>.yml` (`frigate`, `sonarr`, `radarr`, `lidarr`, `prowlarr`, `transmission`, `jellyfin`, `immich`, `nextcloud`), run as
     `ansible-playbook config/<app>.yml -e app_action=<action>` → `moicpl.app_config`
   - `ssh_keypair.yml` (the SSH key in Bitwarden; a copy of lab1playbooks' one,
     which the legacy playbooks still use) and `appstate_key.yml` (the app
@@ -26,7 +26,7 @@ spans four repos, plus the app state store:
   `moicpl.nixos.nixos`.
 - `collection-app-config/` (https://github.com/moicpl/collection-app-config),
   collection `moicpl.app_config`: what runs inside the containers (logins,
-  settings, cameras, series). Playbooks `frigate`, `sonarr`, `prowlarr`, each
+  settings, cameras, series). Playbooks `frigate`, `sonarr`, `radarr`, `lidarr`, `prowlarr`, `transmission`, `jellyfin`, `immich`, `nextcloud`, each
   with its role `moicpl.app_config.<app>`, with settings from
   `inventory/group_vars/<group>/<app>.yml`. Depends on `moicpl.nixos` (login
   through `connect.yml` of its `nixos` role). Home Assistant and UniFi have
@@ -166,6 +166,15 @@ point out existing code that breaks them.
     `bitwarden` role is called by its short name. Nothing in a collection
     writes next to its playbooks (`playbook_dir`): that is inside the clone.
     This keeps the collections installable and runnable from any project.
+12. **Apps' config is code, their data is on the NAS.** The data the apps hold
+    (media, downloads, photos, users' files) lives under `/data`, an NFS export
+    (`arr_data_nfs_device`) mounted by NixOS on the host in the apps layer,
+    never by the containers; containers using it start only once it is
+    mounted. Config and databases stay on the local disk (`/var/lib/<app>`:
+    SQLite and PostgreSQL don't work reliably over NFS); their state is code in
+    the inventory (rule 9), and what can't be code, like Nextcloud's database,
+    is saved encrypted in the app state store (rule 10). `default` never erases
+    `/data`.
 
 ## Maintaining this file
 

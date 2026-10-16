@@ -1,0 +1,7 @@
+---
+# Jellyfin's state on the [nixos_arr] machines:
+#   ansible-playbook config/jellyfin.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.jellyfin, in collection-app-config.
+
+- name: Manage Jellyfin's state
+  ansible.builtin.import_playbook: moicpl.app_config.jellyfin

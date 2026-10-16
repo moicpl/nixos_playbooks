@@ -1,0 +1,7 @@
+---
+# Lidarr's state on the [nixos_arr] machines:
+#   ansible-playbook config/lidarr.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.lidarr, in collection-app-config.
+
+- name: Manage Lidarr's state
+  ansible.builtin.import_playbook: moicpl.app_config.lidarr

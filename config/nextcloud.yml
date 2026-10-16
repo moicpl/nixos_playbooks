@@ -1,0 +1,7 @@
+---
+# Nextcloud's state on the [nixos_arr] machines:
+#   ansible-playbook config/nextcloud.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.nextcloud, in collection-app-config.
+
+- name: Manage Nextcloud's state
+  ansible.builtin.import_playbook: moicpl.app_config.nextcloud

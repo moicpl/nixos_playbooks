@@ -1,0 +1,7 @@
+---
+# Immich's state on the [nixos_arr] machines:
+#   ansible-playbook config/immich.yml -e app_action=configure|backup|default
+# The playbook is moicpl.app_config.immich, in collection-app-config.
+
+- name: Manage Immich's state
+  ansible.builtin.import_playbook: moicpl.app_config.immich
